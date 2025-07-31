@@ -1,0 +1,661 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Robotaxi Services and Testing in U.S. Metro Areas</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.min.js"></script>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+    }
+    header {
+      background-color: #333;
+      color: white;
+      text-align: center;
+      padding: 1em;
+    }
+    #map {
+      height: 80vh;
+      width: 100%;
+      max-width: 1200px;
+      margin: 20px auto;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    #legend {
+      position: absolute;
+      bottom: 30px;
+      left: 30px;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      z-index: 1000;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 5px;
+      cursor: pointer;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+    .legend-item:hover:not(.active) {
+      background-color: #f0f0f0;
+    }
+    .legend-item.active {
+      background-color: #e0e0e0;
+      font-weight: bold;
+    }
+    .legend-color {
+      width: 24px;
+      height: 16px;
+      margin-right: 10px;
+    }
+    .leaflet-cluster-anim .leaflet-marker-cluster div {
+      background-color: #333;
+      color: white;
+      font-weight: bold;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 30px;
+    }
+    .leaflet-marker-label {
+      font-size: 12px;
+      font-weight: bold;
+      color: #333;
+      background-color: rgba(255, 255, 255, 0.8);
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Robotaxi Services and Testing in U.S. Metro Areas</h1>
+    <p>Map of metropolitan areas with launched or testing robotaxi services by Tesla, Waymo/Waymo One, Zoox, Lyft, and Uber (as of July 2025). Zoom or click clusters to see individual companies. Hover over legend items to uncluster and highlight robotaxi icons (filled for launched, outlined for testing) with labels. Click a legend item to lock the unclustered view and show only related markers; click again to revert.</p>
+  </header>
+  <div id="map"></div>
+  <div id="legend">
+    <h3>Legend</h3>
+    <div class="legend-item" id="tesla">
+      <img class="legend-color" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='16' viewBox='0 0 32 16'><polygon points='2,4 30,4 26,14 2,14' fill='%23FF3333' stroke='%23333' stroke-width='1' opacity='0.8'/><circle cx='6' cy='14' r='2' fill='%23333'/><circle cx='24' cy='14' r='2' fill='%23333'/><rect x='10' y='6' width='10' height='5' fill='none' stroke='%23333' stroke-width='1'/></svg>" />
+      <span>Tesla</span>
+    </div>
+    <div class="legend-item" id="waymo">
+      <img class="legend-color" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='16' viewBox='0 0 32 16'><polygon points='2,4 30,4 26,14 2,14' fill='%2333CC33' stroke='%23333' stroke-width='1' opacity='0.8'/><circle cx='6' cy='14' r='2' fill='%23333'/><circle cx='24' cy='14' r='2' fill='%23333'/><rect x='10' y='6' width='10' height='5' fill='none' stroke='%23333' stroke-width='1'/></svg>" />
+      <span>Waymo/Waymo One</span>
+    </div>
+    <div class="legend-item" id="zoox">
+      <img class="legend-color" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='12' viewBox='0 0 32 16'><polygon points='2,4 30,4 26,14 2,14' fill='none' stroke='%239933FF' stroke-width='2' opacity='0.8'/><circle cx='6' cy='14' r='2' fill='%23333'/><circle cx='24' cy='14' r='2' fill='%23333'/><rect x='10' y='6' width='10' height='5' fill='none' stroke='%23333' stroke-width='1'/></svg>" />
+      <span>Zoox</span>
+    </div>
+    <div class="legend-item" id="lyft">
+      <img class="legend-color" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='16' viewBox='0 0 32 16'><polygon points='2,4 30,4 26,14 2,14' fill='%23FF66CC' stroke='%23333' stroke-width='1' opacity='0.8'/><circle cx='6' cy='14' r='2' fill='%23333'/><circle cx='24' cy='14' r='2' fill='%23333'/><rect x='10' y='6' width='10' height='5' fill='none' stroke='%23333' stroke-width='1'/></svg>" />
+      <span>Lyft</span>
+    </div>
+    <div class="legend-item" id="uber">
+      <img class="legend-color" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='16' viewBox='0 0 32 16'><polygon points='2,4 30,4 26,14 2,14' fill='%23FF99CC' stroke='%23333' stroke-width='1' opacity='0.8'/><circle cx='6' cy='14' r='2' fill='%23333'/><circle cx='24' cy='14' r='2' fill='%23333'/><rect x='10' y='6' width='10' height='5' fill='none' stroke='%23333' stroke-width='1'/></svg>" />
+      <span>Uber</span>
+    </div>
+  </div>
+  <script>
+    // Initialize map
+    const map = L.map('map').setView([37.0902, -95.7129], 4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    // Initialize marker cluster group
+    const markers = L.markerClusterGroup({
+      iconCreateFunction: function(cluster) {
+        return L.divIcon({
+          html: '<div style="background-color:#333;color:white;font-weight:bold;border-radius:50%;width:30px;height:30px;line-height:30px;text-align:center;">' + cluster.getChildCount() + '</div>',
+          className: 'marker-cluster',
+          iconSize: [30, 30]
+        });
+      },
+      maxClusterRadius: 80
+    });
+
+    // Store markers by metro area
+    const metroAreaMarkers = {};
+    const allMarkers = [];
+    let activeLegendId = null;
+
+    // Define marker icons (using SVGs with clear launched/testing distinction)
+    const icons = {
+      teslaLaunched: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="24" height="16" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="#FF3333" stroke="#333" stroke-width="1" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [24, 16],
+        iconAnchor: [12, 8],
+        labelAnchor: [12, -5]
+      }),
+      teslaTesting: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="20" height="12" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="none" stroke="#FF3333" stroke-width="2" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [20, 12],
+        iconAnchor: [10, 6],
+        labelAnchor: [10, -5]
+      }),
+      teslaHighlight: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="36" height="24" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="#FF3333" stroke="#333" stroke-width="1" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [36, 24],
+        iconAnchor: [18, 12],
+        labelAnchor: [18, -5]
+      }),
+      waymoLaunched: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="24" height="16" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="#33CC33" stroke="#333" stroke-width="1" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [24, 16],
+        iconAnchor: [12, 8],
+        labelAnchor: [12, -5]
+      }),
+      waymoTesting: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="20" height="12" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="none" stroke="#33CC33" stroke-width="2" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [20, 12],
+        iconAnchor: [10, 6],
+        labelAnchor: [10, -5]
+      }),
+      waymoHighlight: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="36" height="24" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="#33CC33" stroke="#333" stroke-width="1" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [36, 24],
+        iconAnchor: [18, 12],
+        labelAnchor: [18, -5]
+      }),
+      zooxTesting: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="20" height="12" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="none" stroke="#9933FF" stroke-width="2" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [20, 12],
+        iconAnchor: [10, 6],
+        labelAnchor: [10, -5]
+      }),
+      zooxHighlight: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="36" height="24" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="none" stroke="#9933FF" stroke-width="2" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [36, 24],
+        iconAnchor: [18, 12],
+        labelAnchor: [18, -5]
+      }),
+      lyftLaunched: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="24" height="16" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="#FF66CC" stroke="#333" stroke-width="1" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [24, 16],
+        iconAnchor: [12, 8],
+        labelAnchor: [12, -5]
+      }),
+      lyftTesting: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="20" height="12" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="none" stroke="#FF66CC" stroke-width="2" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [20, 12],
+        iconAnchor: [10, 6],
+        labelAnchor: [10, -5]
+      }),
+      lyftHighlight: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="36" height="24" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="#FF66CC" stroke="#333" stroke-width="1" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [36, 24],
+        iconAnchor: [18, 12],
+        labelAnchor: [18, -5]
+      }),
+      uberLaunched: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="24" height="16" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="#FF99CC" stroke="#333" stroke-width="1" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [24, 16],
+        iconAnchor: [12, 8],
+        labelAnchor: [12, -5]
+      }),
+      uberTesting: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="20" height="12" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="none" stroke="#FF99CC" stroke-width="2" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [20, 12],
+        iconAnchor: [10, 6],
+        labelAnchor: [10, -5]
+      }),
+      uberHighlight: L.divIcon({
+        className: 'custom-icon',
+        html: '<svg width="36" height="24" viewBox="0 0 32 16"><polygon points="2,4 30,4 26,14 2,14" fill="#FF99CC" stroke="#333" stroke-width="1" opacity="0.8"/><circle cx="6" cy="14" r="2" fill="#333"/><circle cx="24" cy="14" r="2" fill="#333"/><rect x="10" y="6" width="10" height="5" fill="none" stroke="#333" stroke-width="1"/></svg>',
+        iconSize: [36, 24],
+        iconAnchor: [18, 12],
+        labelAnchor: [18, -5]
+      })
+    };
+
+    // Data for metro areas (unchanged)
+    const metroAreas = [
+      {
+        name: 'Austin-Round Rock, TX',
+        coords: [30.2672, -97.7431],
+        status: 'Launched',
+        company: 'Tesla',
+        details: 'Safety monitors, invite-only, ~10-20 Model Ys',
+        regScore: '1 (AV-friendly)',
+        launchDate: 'June 22, 2025',
+        icon: icons.teslaLaunched,
+        highlightIcon: icons.teslaHighlight,
+        legendId: 'tesla'
+      },
+      {
+        name: 'Austin-Round Rock, TX',
+        coords: [30.2672, -97.7431],
+        status: 'Launched',
+        company: 'Waymo',
+        details: 'Fully autonomous via Uber app',
+        regScore: '1 (AV-friendly)',
+        launchDate: '2025',
+        icon: icons.waymoLaunched,
+        highlightIcon: icons.waymoHighlight,
+        legendId: 'waymo'
+      },
+      {
+        name: 'Austin-Round Rock, TX',
+        coords: [30.2672, -97.7431],
+        status: 'Launched',
+        company: 'Lyft',
+        details: 'Via Waymo partnership',
+        regScore: '1 (AV-friendly)',
+        launchDate: '2025',
+        icon: icons.lyftLaunched,
+        highlightIcon: icons.lyftHighlight,
+        legendId: 'lyft'
+      },
+      {
+        name: 'Austin-Round Rock, TX',
+        coords: [30.2672, -97.7431],
+        status: 'Launched',
+        company: 'Uber',
+        details: 'Via Waymo partnership',
+        regScore: '1 (AV-friendly)',
+        launchDate: '2025',
+        icon: icons.uberLaunched,
+        highlightIcon: icons.uberHighlight,
+        legendId: 'uber'
+      },
+      {
+        name: 'Austin-Round Rock, TX',
+        coords: [30.2672, -97.7431],
+        status: 'Testing',
+        company: 'Zoox',
+        details: 'Retrofitted Toyota Highlanders',
+        regScore: '1 (AV-friendly)',
+        expectedLaunch: '2026',
+        icon: icons.zooxTesting,
+        highlightIcon: icons.zooxHighlight,
+        legendId: 'zoox'
+      },
+      {
+        name: 'Phoenix-Mesa-Scottsdale, AZ',
+        coords: [33.4484, -112.0740],
+        status: 'Launched',
+        company: 'Waymo One',
+        details: 'Fully autonomous via Waymo One app, 250,000+ weekly trips',
+        regScore: '1 (highly AV-friendly)',
+        launchDate: 'November 2018',
+        icon: icons.waymoLaunched,
+        highlightIcon: icons.waymoHighlight,
+        legendId: 'waymo'
+      },
+      {
+        name: 'Phoenix-Mesa-Scottsdale, AZ',
+        coords: [33.4484, -112.0740],
+        status: 'Launched',
+        company: 'Lyft',
+        details: 'Via Waymo partnership',
+        regScore: '1 (highly AV-friendly)',
+        launchDate: '2018',
+        icon: icons.lyftLaunched,
+        highlightIcon: icons.lyftHighlight,
+        legendId: 'lyft'
+      },
+      {
+        name: 'Phoenix-Mesa-Scottsdale, AZ',
+        coords: [33.4484, -112.0740],
+        status: 'Launched',
+        company: 'Uber',
+        details: 'Via Waymo partnership',
+        regScore: '1 (highly AV-friendly)',
+        launchDate: '2018',
+        icon: icons.uberLaunched,
+        highlightIcon: icons.uberHighlight,
+        legendId: 'uber'
+      },
+      {
+        name: 'San Francisco-Oakland-Hayward, CA',
+        coords: [37.7749, -122.4194],
+        status: 'Launched',
+        company: 'Waymo One',
+        details: 'Fully autonomous via Waymo One app',
+        regScore: '5 (strict)',
+        launchDate: 'June 2024',
+        icon: icons.waymoLaunched,
+        highlightIcon: icons.waymoHighlight,
+        legendId: 'waymo'
+      },
+      {
+        name: 'San Francisco-Oakland-Hayward, CA',
+        coords: [37.7749, -122.4194],
+        status: 'Testing',
+        company: 'Tesla',
+        details: 'Employee testing with safety drivers',
+        regScore: '5 (strict)',
+        expectedLaunch: 'Late 2025',
+        icon: icons.teslaTesting,
+        highlightIcon: icons.teslaHighlight,
+        legendId: 'tesla'
+      },
+      {
+        name: 'Los Angeles-Long Beach-Anaheim, CA',
+        coords: [34.0522, -118.2437],
+        status: 'Launched',
+        company: 'Waymo One',
+        details: 'Fully autonomous via Waymo One app',
+        regScore: '5 (strict)',
+        launchDate: '2024',
+        icon: icons.waymoLaunched,
+        highlightIcon: icons.waymoHighlight,
+        legendId: 'waymo'
+      },
+      {
+        name: 'Los Angeles-Long Beach-Anaheim, CA',
+        coords: [34.0522, -118.2437],
+        status: 'Testing',
+        company: 'Zoox',
+        details: 'Retrofitted vehicles, planned launch post-2025',
+        regScore: '5 (strict)',
+        expectedLaunch: '2026',
+        icon: icons.zooxTesting,
+        highlightIcon: icons.zooxHighlight,
+        legendId: 'zoox'
+      },
+      {
+        name: 'Atlanta-Sandy Springs-Roswell, GA',
+        coords: [33.7490, -84.3880],
+        status: 'Launched',
+        company: 'Waymo',
+        details: 'Fully autonomous via Uber app',
+        regScore: '2 (moderate-to-friendly)',
+        launchDate: '2025',
+        icon: icons.waymoLaunched,
+        highlightIcon: icons.waymoHighlight,
+        legendId: 'waymo'
+      },
+      {
+        name: 'Atlanta-Sandy Springs-Roswell, GA',
+        coords: [33.7490, -84.3880],
+        status: 'Launched',
+        company: 'Lyft',
+        details: 'Via Waymo and May Mobility partnerships',
+        regScore: '2 (moderate-to-friendly)',
+        launchDate: '2025',
+        icon: icons.lyftLaunched,
+        highlightIcon: icons.lyftHighlight,
+        legendId: 'lyft'
+      },
+      {
+        name: 'Atlanta-Sandy Springs-Roswell, GA',
+        coords: [33.7490, -84.3880],
+        status: 'Launched',
+        company: 'Uber',
+        details: 'Via Waymo partnership',
+        regScore: '2 (moderate-to-friendly)',
+        launchDate: '2025',
+        icon: icons.uberLaunched,
+        highlightIcon: icons.uberHighlight,
+        legendId: 'uber'
+      },
+      {
+        name: 'Atlanta-Sandy Springs-Roswell, GA',
+        coords: [33.7490, -84.3880],
+        status: 'Testing',
+        company: 'Waymo',
+        details: 'Testing for expansion',
+        regScore: '2 (moderate-to-friendly)',
+        expectedLaunch: '2026',
+        icon: icons.waymoTesting,
+        highlightIcon: icons.waymoHighlight,
+        legendId: 'waymo'
+      },
+      {
+        name: 'Miami-Fort Lauderdale-Pompano Beach, FL',
+        coords: [25.7617, -80.1918],
+        status: 'Testing',
+        company: 'Waymo',
+        details: 'Testing with Geely Zeekr and Hyundai Ioniq 5',
+        regScore: '1 (AV-permissive)',
+        expectedLaunch: '2025',
+        icon: icons.waymoTesting,
+        highlightIcon: icons.waymoHighlight,
+        legendId: 'waymo'
+      },
+      {
+        name: 'Miami-Fort Lauderdale-Pompano Beach, FL',
+        coords: [25.7617, -80.1918],
+        status: 'Testing',
+        company: 'Zoox',
+        details: 'Retrofitted Toyota Highlanders',
+        regScore: '1 (AV-permissive)',
+        expectedLaunch: '2026',
+        icon: icons.zooxTesting,
+        highlightIcon: icons.zooxHighlight,
+        legendId: 'zoox'
+      },
+      {
+        name: 'Las Vegas-Henderson-Paradise, NV',
+        coords: [36.1699, -115.1398],
+        status: 'Testing',
+        company: 'Zoox',
+        details: 'Purpose-built vehicles, planned launch 2025',
+        regScore: '2 (moderate-to-friendly)',
+        expectedLaunch: 'Late 2025',
+        icon: icons.zooxTesting,
+        highlightIcon: icons.zooxHighlight,
+        legendId: 'zoox'
+      },
+      {
+        name: 'Las Vegas-Henderson-Paradise, NV',
+        coords: [36.1699, -115.1398],
+        status: 'Testing',
+        company: 'Lyft',
+        details: 'Via Motional partnership, no active public rides',
+        regScore: '2 (moderate-to-friendly)',
+        expectedLaunch: '2026',
+        icon: icons.lyftTesting,
+        highlightIcon: icons.lyftHighlight,
+        legendId: 'lyft'
+      },
+      {
+        name: 'Seattle-Tacoma-Bellevue, WA',
+        coords: [47.6062, -122.3321],
+        status: 'Testing',
+        company: 'Zoox',
+        details: 'Retrofitted vehicles',
+        regScore: '3 (moderate)',
+        expectedLaunch: '2026',
+        icon: icons.zooxTesting,
+        highlightIcon: icons.zooxHighlight,
+        legendId: 'zoox'
+      },
+      {
+        name: 'Dallas-Fort Worth-Arlington, TX',
+        coords: [32.7767, -96.7970],
+        status: 'Testing',
+        company: 'Lyft',
+        details: 'Via Marubeni and Mobileye, planned launch 2026',
+        regScore: '1 (AV-friendly)',
+        expectedLaunch: '2026',
+        icon: icons.lyftTesting,
+        highlightIcon: icons.lyftHighlight,
+        legendId: 'lyft'
+      },
+      {
+        name: 'Washington-Arlington-Alexandria, DC-VA-MD-WV',
+        coords: [38.9072, -77.0369],
+        status: 'Testing',
+        company: 'Waymo',
+        details: 'Testing with no public rides',
+        regScore: '3 (moderate)',
+        expectedLaunch: '2026',
+        icon: icons.waymoTesting,
+        highlightIcon: icons.waymoHighlight,
+        legendId: 'waymo'
+      }
+    ];
+
+    // Create feature groups for each metro area
+    metroAreas.forEach(area => {
+      if (!metroAreaMarkers[area.name]) {
+        metroAreaMarkers[area.name] = L.featureGroup();
+      }
+      const marker = L.marker(area.coords, {
+        icon: area.status === 'Launched' ? area.icon : icons[`${area.legendId}Testing`],
+        label: {
+          text: area.company,
+          className: 'leaflet-marker-label',
+          permanent: true,
+          direction: 'top',
+          offset: [0, -5]
+        }
+      });
+      marker.bindPopup(`
+        <b>${area.name}</b><br>
+        <b>Company:</b> ${area.company}<br>
+        <b>Status:</b> ${area.status}<br>
+        <b>Details:</b> ${area.details}<br>
+        <b>Regulatory Score:</b> ${area.regScore}<br>
+        ${area.status === 'Launched' ? `<b>Launch Date:</b> ${area.launchDate}` : `<b>Expected Launch:</b> ${area.expectedLaunch}`}
+      `);
+      marker.company = area.company;
+      marker.status = area.status;
+      marker.legendId = area.legendId;
+      marker.defaultIcon = area.status === 'Launched' ? area.icon : icons[`${area.legendId}Testing`];
+      marker.highlightIcon = area.highlightIcon;
+      marker.metroName = area.name;
+      allMarkers.push(marker);
+      metroAreaMarkers[area.name].addLayer(marker);
+      markers.addLayer(marker);
+    });
+
+    // Add cluster group to map
+    map.addLayer(markers);
+
+    // Function to update map state (sticky mode)
+    function updateMapState(legendId) {
+      // Remove all markers
+      Object.keys(metroAreaMarkers).forEach(metroName => {
+        const featureGroup = metroAreaMarkers[metroName];
+        map.removeLayer(featureGroup);
+        markers.removeLayer(featureGroup);
+      });
+      // Add only matching markers
+      allMarkers.forEach(marker => {
+        if (marker.legendId === legendId) {
+          const featureGroup = metroAreaMarkers[marker.metroName];
+          map.addLayer(featureGroup);
+          featureGroup.eachLayer(m => {
+            if (m.legendId === legendId) {
+              m.setIcon(m.highlightIcon);
+              m.setZIndexOffset(1000);
+            }
+          });
+        }
+      });
+    }
+
+    // Function to reset map state
+    function resetMapState() {
+      Object.keys(metroAreaMarkers).forEach(metroName => {
+        const featureGroup = metroAreaMarkers[metroName];
+        map.removeLayer(featureGroup);
+        markers.addLayer(featureGroup);
+        featureGroup.eachLayer(marker => {
+          marker.setIcon(marker.defaultIcon);
+          marker.setZIndexOffset(0);
+        });
+      });
+    }
+
+    // Add interactivity to legend
+    document.querySelectorAll('.legend-item').forEach(item => {
+      item.addEventListener('mouseover', function() {
+        if (!activeLegendId) {
+          updateMapState(this.id);
+        }
+      });
+      item.addEventListener('mouseout', function() {
+        if (!activeLegendId) {
+          resetMapState();
+        }
+      });
+      item.addEventListener('click', function() {
+        const legendId = this.id;
+        if (activeLegendId === legendId) {
+          // Deactivate sticky mode
+          activeLegendId = null;
+          this.classList.remove('active');
+          resetMapState();
+        } else {
+          // Activate sticky mode
+          if (activeLegendId) {
+            document.getElementById(activeLegendId).classList.remove('active');
+          }
+          activeLegendId = legendId;
+          this.classList.add('active');
+          resetMapState();
+          updateMapState(legendId);
+        }
+      });
+    });
+  </script>
+</body>
+</html>
